@@ -1,143 +1,235 @@
+
+#############################################################################################################
+# Required Python Packages
+#############################################################################################################
 import pandas as pd
+import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import MinMaxScaler
-
 from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+import joblib
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+#############################################################################################################
+# File Paths
+#############################################################################################################
+OUTPUT_PATH = 'breast-cancer-wisconsin.csv'
+MODEL_PATH = "bc_model_pipeline.joblib"
 
 
+#############################################################################################################
+# Headers
+#############################################################################################################
+HEADERS = ['CodeNumber', 'ClumpThickness', 'UniformityCellSize',
+       'UniformityCellShape', 'MarginalAdhesion', 'SingleEpithelialCellSize',
+       'BareNuclei', 'BlandChromatin', 'NormalNucleoli', 'Mitoses',
+       'CancerType']
+
+#############################################################################################################
+# Function name :       dataset_statistics
+# Description :         Display statistics
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def dataset_statistics(dataset):
+    # Print basic stats
+    print(dataset.describe())
+
+
+#############################################################################################################
+# Function name :       handle_missing_values
+# Description :         Filter missing values from the dataset
+# Input :               Dataset with missing values
+# Output :              Dataset by removing the missing values
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def handle_missing_values(dataset, feature_headers):
+    """
+    Convert '?' to np.NaN and let Simple Imputer handle them inside Pipeline.
+    Keep only numeric columns in features 
+    """
+    # Replace '?' in whole dataframe
+    dataset = dataset.replace('?', np.nan)
+
+    # Cast features to numeric
+    dataset[feature_headers] = dataset[feature_headers].apply(pd.to_numeric, errors = 'coerce')
+
+    return dataset
+    
+
+#############################################################################################################
+# Function name :       split_dataset
+# Description :         Split the dataset with train_percentage
+# Input :               Dataset with related information
+# Output :              Dataset after splitting
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def split_dataset(df, features, target, train_percentage):
+    X_train, X_test, Y_train, Y_test = train_test_split(df[features], df[target], train_size=train_percentage, random_state=42)
+
+    return X_train, X_test, Y_train, Y_test
+
+
+#############################################################################################################
+# Function name :       build_pipeline
+# Description :         Build a pipeline
+# Simple Imputer :      replace missing(NaN values) with median
+# Random Forest :       robust baseline         
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def build_pipeline():
+    pipe = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="median")),
+        ("rf", RandomForestClassifier(
+            n_estimators=300,
+            random_state=42,
+            n_jobs=-1,
+            class_weight=None
+            ))
+    ])
+
+    return pipe
+
+
+#############################################################################################################
+# Function name :       train_pipeline
+# Description :         Train a pipeline
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def train_pipeline(pipe, X_train, Y_train):
+    pipe.fit(X_train, Y_train)
+    return pipe
+
+
+
+#############################################################################################################
+# Function name :       plot_feature_importances
+# Description :         Display the feature importance
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def plot_feature_importances(model, features_names, title="Feature Importances (Random Forest)"):
+    if hasattr(model, "named_steps") and "rf" in model.named_steps:
+        rf = model.named_steps["rf"]
+        importances = rf.feature_importances_
+    elif hasattr(model, "feature_importances_"):
+        importances = model.feature_importances_
+    else:
+        print("Feature importance not available for this model")
+        return
+    
+    idx = np.argsort(importances)[::-1]
+    plt.figure(figsize=(8,6))
+    plt.bar(range(len(importances)), importances[idx])
+    plt.xticks(range(len(importances)), [features_names[i] for i in idx], rotation=45, ha = 'right')
+    plt.ylabel("Importance")
+    plt.title(title)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+#############################################################################################################
+# Function name :       save_model
+# Description :         Save the model
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def save_model(model, path=MODEL_PATH):
+    joblib.dump(model, path)
+    print(f"Model saved to {path}")
+
+
+
+#############################################################################################################
+# Function name :       load_model
+# Description :         Load the trained model
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
+def load_model(path=MODEL_PATH):
+    model = joblib.load(path)
+    print(f"Model loaded from path : {path}")
+    return model
+
+
+
+
+#############################################################################################################
+# Function name :       main
+# Description :         Main function from where execution starts
+# Author :              Aayush Musale
+# Date :                10/08/2025
+#############################################################################################################
 def main():
-    # EDA - Exploratory Data Analysis
-    # Load the dataset using Pandas df-dataframe
-    df = pd.read_csv('diabetes.csv')  
-    Border = '-'*120
-    print("Dimension : ", df.shape)
+    # 1) Load CSV
+    dataset = pd.read_csv(OUTPUT_PATH)
 
-    print("First 5 entries : ")
-    print(df.head())
+    # 2) Drop unnecessary columns 
+    dataset.drop(columns=HEADERS[0], inplace=True)
 
-    print("\nInformation about the Dataset : ")
-    print(df.info())
+    # 3) Basic stats
+    dataset_statistics(dataset)
 
-    # print("\nChecking for the null values in the Dataset : ")
-    # print(df.isna().sum())
+    # 4) Prepare features/target
+    feature_headers = HEADERS[1:-1]     # Drop CodeNumber, keep all features
+    target_headers = HEADERS[-1]        # CancerType (benign = 2, maligant = 4)
 
-    print("\nStatistical Data : ")
-    print(df.describe())
+    # 5) Handle '?' and coerce to numeric; imputation will happen inside Pipeline
+    dataset = handle_missing_values(dataset, feature_headers)
 
-    # Splitting the Dataset into Independent and Dependent Variables
-    X = df.drop(columns='Outcome')
-    Y = df["Outcome"]
+    # 6) Split
+    X_train, X_test, Y_train, Y_test = split_dataset(dataset, feature_headers, target_headers, 0.7)
 
-    # Plotting the Distribution table of the 'Outcome' column
-    # sns.histplot(data=df, x=Y, bins=5)
-    # plt.xlabel("Distribution of the Dependent Variable")
-    # plt.ylabel("Frequency of Distribution")
-    # plt.grid()
-    # plt.show()
+    print(f"X_train shape : {X_train.shape}")
+    print(f"X_test shape : {X_test.shape}")
+    print(f"Y_train shape : {Y_train.shape}")
+    print(f"Y_test shape : {Y_test.shape}")
 
-    # Feature Importance
-    # sns.pairplot(data=df, hue="Outcome")
-    # plt.show()
+    # 7) Build + Train Pipeline
+    pipeline = build_pipeline()
+    trained_model = train_pipeline(pipeline, X_train, Y_train)
 
 
-    # Data Preprocessing
-    # handling 0 values in the dataset with mean of that column
-    imputer = SimpleImputer(missing_values=0, strategy = 'mean')
-    df['Glucose'] = imputer.fit_transform(df[['Glucose']])
-    df['BloodPressure'] = imputer.fit_transform(df[['BloodPressure']])
-    df['SkinThickness'] = imputer.fit_transform(df[['SkinThickness']])
-    df['Insulin'] = imputer.fit_transform(df[['Insulin']])
-    df['BMI'] = imputer.fit_transform(df[['BMI']])
+    # 8)Predictions
+    predictions = trained_model.predict(X_test)
 
-    # print("\nUpdated Dataset : ")
-    # print(df.shape)
-    # print(df.head())
-    
-    min_max_scaled = MinMaxScaler()
-    x_scaled = min_max_scaled.fit_transform(X)
-    # print("\n\nAfter Min Max Scaling : ")
-    # print(x_scaled)
+    # 9) Metrics
+    print(f"Training Accuracy : {accuracy_score(Y_train, trained_model.predict(X_train))}")
+    print(f"Testing Accuracy : {accuracy_score(Y_test, predictions)}")
+    print(f"Classification Report :\n{classification_report(Y_test, predictions)}")
+    print(f"Confusion Matrix :\n {confusion_matrix(Y_test, predictions)}")
 
+    # 10) Feature importances(tree-based)
+    plot_feature_importances(trained_model, feature_headers, title="Feature Importances (RF)")
 
-    # Model Building
-    # train_test_split
-    X_train, X_test, Y_train, Y_test = train_test_split(x_scaled, Y, test_size= 0.2, random_state=42)
+    # 11) Save model (Pipeline) using joblib
+    save_model(trained_model, MODEL_PATH)
 
-    # KNN
-    print(Border)
-    model = KNeighborsClassifier(n_neighbors=13)
-    model.fit(X_train, Y_train)
-    Y_pred = model.predict(X_test)
-    
-    accuracy = accuracy_score(Y_test, Y_pred)
-    print("Accuracy using KNN Algorithm : ", accuracy*100)
-
-    clf = classification_report(Y_test, Y_pred)
-    print("Classification Report : ")
-    print(clf)
-
-    Conf_matrix = confusion_matrix(Y_test, Y_pred)
-    print("Confusion Matrix : ")
-    print(Conf_matrix)
-
-    # DecisionTree
-    print(Border)
-    model = DecisionTreeClassifier()
-    model.fit(X_train, Y_train)
-    Y_pred = model.predict(X_test)
-    
-    accuracy = accuracy_score(Y_test, Y_pred)
-    print("Accuracy using DecisionTree Algorithm : ", accuracy*100)   
-
-    clf = classification_report(Y_test, Y_pred)
-    print("Classification Report : ")
-    print(clf) 
-
-    Conf_matrix = confusion_matrix(Y_test, Y_pred)
-    print("Confusion Matrix : ")
-    print(Conf_matrix)
+    # 12) Load model and test a sample
+    loaded_model = load_model(MODEL_PATH)
+    sample = X_test.iloc[[0]]
+    pre_loaded = loaded_model.predict(sample)
+    print(f"Loaded model prediction for sample : {pre_loaded[0]}")
 
 
-    # Logistic Regression
-    print(Border)
-    model = LogisticRegression()
-    model.fit(X_train, Y_train)
-    Y_pred = model.predict(X_test)
-    
-    accuracy = accuracy_score(Y_test, Y_pred)
-    print("Accuracy using Logistic Regression Algorithm : ", accuracy*100)
-    clf = classification_report(Y_test, Y_pred)
-    print("Classification Report : ")
-    print(clf)
-
-    Conf_matrix = confusion_matrix(Y_test, Y_pred)
-    print("Confusion Matrix : ")
-    print(Conf_matrix)
-    
-
-    # for k in range(2,16):
-    #     model = KNeighborsClassifier(n_neighbors=k)
-    #     model.fit(X_train, Y_train)
-    #     Y_pred = model.predict(X_test)
-        
-    #     accuracy = accuracy_score(Y_test, Y_pred)
-    #     print(f"Accuracy using KNN Algorithm for K = {k} : ", accuracy*100)
-
-
-    print(Border)
-    print("-"*50, "Program Terminated", "-"*50)
-    print(Border)
-
-
+#############################################################################################################
+# Application Starter
+#############################################################################################################
 if __name__ == "__main__":
     main()
