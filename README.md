@@ -81,6 +81,34 @@ pip install pandas numpy matplotlib seaborn scikit-learn joblib
 1. Ensure you have the required dataset: `breast-cancer-wisconsin.csv`
 2. Install all dependencies listed above
 
+## Expected Output:
+Training Accuracy : 1.0
+
+Testing Accuracy : 0.97
+
+Classification Report :
+
+              precision    recall  f1-score   support
+
+           2       0.98      0.97      0.97       135
+           4       0.95      0.96      0.95        75
+
+    accuracy                           0.97       210
+    macro          0.96      0.97      0.96       210
+    weighted avg   0.97      0.97      0.97       210
+
+Confusion Matrix :
+
+             [[131   4]
+              [  3 72]]
+ 
+Model saved to bc_model_pipeline.joblib
+
+Model loaded from path : bc_model_pipeline.joblib
+
+Loaded model prediction for sample : 4
+
+
 
 ## 👨‍💻 Author
 
